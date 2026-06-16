@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    container_name: django_app
+    ports:
+      - "8000:8000"
+    command: daphne -b 0.0.0.0 -p 8000 smart_safety_mining.asgi:application
+    depends_on:
+      - redis
+
+  celery:
+    build: .
+    container_name: celery_worker
+    command: celery -A smart_safety_mining worker --loglevel=info
+    depends_on:
+      - redis
+
+  celery-beat:
+    build: .
+    container_name: celery_beat
+    command: celery -A smart_safety_mining beat --loglevel=info
+    depends_on:
+      - redis
+      - celery
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
