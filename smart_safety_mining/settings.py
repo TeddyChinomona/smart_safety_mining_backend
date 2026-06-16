@@ -108,8 +108,16 @@ CELERY_BROKER_URL = 'redis://redis:6379/0'
 CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
 
 CELERY_BEAT_SCHEDULE = {
+    # Device 2 BLE wearable events (AI prediction + BLE geofencing)
     'process-iot-sensor-data': {
         'task': 'Analytics.tasks.process_iot_sensor_data',
-        'schedule': 5.0,   # seconds
+        'schedule': 5.0,
+    },
+    # Device 1 GPS sensor readings (geofence polygon recomputation + WS broadcast)
+    'process-gps-sensor-data': {
+        'task': 'Analytics.tasks.process_gps_sensor_data',
+        'schedule': 3.0,   # faster cadence so the live fence boundary stays fresh
     },
 }
+ 
+
