@@ -100,7 +100,12 @@ class UserListView(Authentication):
     workers-only list gracefully.
     """
     def get_permissions(self):
-        return [IsAdminRole() | IsManagerRole() | IsSafetyOfficerRole()]
+        # Combine the CLASSES with `|` (DRF's permission composability is
+        # implemented via a metaclass on the class objects, not on instances),
+        # then instantiate the combined result exactly once.
+        # IsAdminRole() | IsManagerRole() | ... would raise TypeError, since
+        # plain instances have no __or__ defined.
+        return [(IsAdminRole | IsManagerRole | IsSafetyOfficerRole)()]
 
     def get(self, request):
         users = User.objects.all()

@@ -104,12 +104,21 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": ["redis://redis:6379/0"],
+            "hosts": [
+                {
+                    "host": "redis",
+                    "port": 6379,
+                    "db": 0,
+                    "socket_timeout": None,          # no idle read timeout
+                    "socket_connect_timeout": 5,     # timeout only on initial connect
+                }
+            ],
             "capacity": 1500,
             "expiry": 60,
         },
     },
 }
+
 
 # ── Celery ─────────────────────────────────────────────────────────────────────
 CELERY_BROKER_URL = 'redis://redis:6379/0'

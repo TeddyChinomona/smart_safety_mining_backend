@@ -25,7 +25,11 @@ class ZoneViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ('create', 'update', 'partial_update', 'destroy'):
-            return [IsAdminRole() | IsSafetyOfficerRole()]
+            # Combine CLASSES with `|`, then instantiate once — DRF's
+            # permission composability lives on the metaclass, not on
+            # instances. IsAdminRole() | IsSafetyOfficerRole() raises
+            # TypeError because plain instances have no __or__.
+            return [(IsAdminRole | IsSafetyOfficerRole)()]
         return [IsAuthenticated()]
 
 
@@ -42,7 +46,7 @@ class MiningSessionViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ('create', 'end_session', 'destroy'):
-            return [IsAdminRole() | IsSafetyOfficerRole() | IsManagerRole()]
+            return [(IsAdminRole | IsSafetyOfficerRole | IsManagerRole)()]
         return [IsAuthenticated()]
 
     def perform_create(self, serializer):
@@ -81,7 +85,7 @@ class GPSSensorViewSet(viewsets.ModelViewSet):
     serializer_class = GPSSensorSerializer
 
     def get_permissions(self):
-        return [IsAdminRole() | IsSafetyOfficerRole() | IsManagerRole()]
+        return [(IsAdminRole | IsSafetyOfficerRole | IsManagerRole)()]
 
 
 class SensorEventViewSet(
@@ -97,7 +101,7 @@ class SensorEventViewSet(
     serializer_class = SensorEventSerializer
 
     def get_permissions(self):
-        return [IsAdminRole() | IsManagerRole() | IsSafetyOfficerRole()]
+        return [(IsAdminRole | IsManagerRole | IsSafetyOfficerRole)()]
 
 
 class WorkerStatusViewSet(
@@ -127,7 +131,7 @@ class IncidentViewSet(viewsets.ModelViewSet):
 class AnalyticsViewSet(viewsets.ViewSet):
 
     def get_permissions(self):
-        return [IsAdminRole() | IsManagerRole() | IsSafetyOfficerRole()]
+        return [(IsAdminRole | IsManagerRole | IsSafetyOfficerRole)()]
 
     @action(detail=False, methods=['get'])
     def summary(self, request):

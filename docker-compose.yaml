@@ -1,32 +1,121 @@
-version: "3.9"
-
 services:
-  web:
-    build: .
-    container_name: django_app
-    ports:
-      - "8000:8000"
-    command: daphne -b 0.0.0.0 -p 8000 smart_safety_mining.asgi:application
-    depends_on:
-      - redis
 
-  celery:
-    build: .
-    container_name: celery_worker
-    command: celery -A smart_safety_mining worker --loglevel=info
-    depends_on:
-      - redis
-
-  celery-beat:
-    build: .
-    container_name: celery_beat
-    command: celery -A smart_safety_mining beat --loglevel=info
-    depends_on:
-      - redis
-      - celery
-
+  # ── Infrastructure ───────────────────────────────────────────────────────────
   redis:
     image: redis:alpine
     container_name: redis
     ports:
       - "6379:6379"
+    networks:
+      - mining_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Django / Daphne ──────────────────────────────────────────────────────────
+  web:
+    build: .
+    container_name: django_app
+    ports:
+      - "8000:8000"
+    # 1. Run all migrations.
+    # 2. Create the admin user. setup_demo.py is a plain script (not a Django
+    #    management command) so it only needs to sit in the project root —
+    #    idempotent, safe to re-run.
+    # 3. Start Daphne.
+    command: >
+      sh -c "python manage.py migrate &&
+             python setup_demo.py &&
+             daphne -b 0.0.0.0 -p 8000 smart_safety_mining.asgi:application"
+    environment:
+      DJANGO_ADMIN_USERNAME: admin
+      DJANGO_ADMIN_PASSWORD: admin123
+      DJANGO_ADMIN_EMAIL: admin@mine.test
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - mining_net
+    # /admin/login/ always returns 200 once Daphne is serving requests —
+    # used by `simulator`'s depends_on below so it only starts once this
+    # whole migrate → setup_demo → daphne chain has actually succeeded.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/admin/login/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    # If migrate/setup_demo/daphne ever crash, keep retrying instead of
+    # staying dead — a dead container's hostname stops resolving on the
+    # Docker network, which is what broke `simulator` previously.
+    restart: unless-stopped
+
+  # ── Celery worker ────────────────────────────────────────────────────────────
+  celery:
+    build: .
+    container_name: celery_worker
+    command: celery -A smart_safety_mining worker --loglevel=info
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - mining_net
+    restart: unless-stopped
+
+  # ── Celery beat (task scheduler) ─────────────────────────────────────────────
+  celery-beat:
+    build: .
+    container_name: celery_beat
+    command: celery -A smart_safety_mining beat --loglevel=info
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery:
+        condition: service_started
+    networks:
+      - mining_net
+    restart: unless-stopped
+
+  # ── Simulator ────────────────────────────────────────────────────────────────
+  # run_simulators.py polls the API until the web service is ready, then
+  # starts simulate_gps.py (background) followed by simulate_iot.py (foreground).
+  # depends_on: web: condition: service_healthy means Compose itself won't even
+  # start this container until web's healthcheck passes — the Python-side
+  # polling loop in run_simulators.py is then just a secondary safety net.
+  simulator:
+    build: .
+    container_name: simulator
+    command: python run_simulators.py
+    environment:
+      # Must match web service credentials above
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
+      # Internal Docker DNS — use service names, not 127.0.0.1
+      API_BASE: http://web:8000
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # GPS fence setup — created automatically if no session exists
+      ZONE_NAME: "Simba Shaft A"
+      SESSION_NAME: "Morning Shift"
+      GPS_SENSOR_IDS: "GPS-001 GPS-002 GPS-003"
+      # Timing knobs
+      STARTUP_MAX: "90"   # max seconds to wait for the API to respond
+      GPS_WARMUP: "20"    # seconds GPS runs before BLE starts (sensor registration)
+    depends_on:
+      web:
+        condition: service_healthy
+      celery:
+        condition: service_started
+      celery-beat:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - mining_net
+    restart: on-failure
+
+networks:
+  mining_net:
+    driver: bridge
