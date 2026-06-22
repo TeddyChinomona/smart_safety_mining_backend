@@ -73,7 +73,7 @@ def flush_simulation_queues():
     port = int(os.getenv("REDIS_PORT", "6379"))
 
     try:
-        rc = redis.StrictRedis(host='127.0.0.1', port=6379, db=0, socket_connect_timeout=5)
+        rc = redis.StrictRedis(host=host, port=port, db=0, socket_connect_timeout=5)
         rc.ping()
         removed = rc.delete(*SIMULATION_QUEUES)
         print(f"[setup_demo] Flushed simulation queues {SIMULATION_QUEUES} "
